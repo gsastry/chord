@@ -1,59 +1,137 @@
 #!/usr/bin/env ruby
-
 require "optparse"
 
 options = {} # record that holds options parsed from cmd line
+options[:offline] = false
+options[:nbits] = 8
+options[:prevkey] = false
+options[:nextport] = false
+options[:nextkey] = false
+options[:prevport] = false
+options[:joinport] = false
 
-optparse = OptionParser.new do |opts|
-    opts.banner = "Usage: dht PORT KEY [-o] [-n NBITS] ... "
-    options[:offline] = false
-    opts.on( '-o', '--offline', 'offline mode' ) do
+#optparse = OptionParser.new do |opts|
+#    opts.banner = "Usage: dht PORT KEY [-o] [-n NBITS] ... "
+#    options[:offline] = false
+#    opts.on( '-o', '--offline', 'offline mode' ) do
+#        options[:offline] = true
+#    end
+#    options[:nbits] = 8
+#    opts.on( '-n', '--numbits NB', Integer, 'specify max bits' ) do |nb|
+#        options[:nbits] = nb
+#    end
+#    options[:prevkey] = nil 
+#    options[:nextport] = nil
+#    options[:nextkey] = nil
+#    options[:prevport] = nil
+#    opts.on( '-s', '--details w,x,y,z', Array,'list of args' ) do|list|
+#        options[:list] = list
+#        options[:prevport] = list[0]
+#        options[:prevkey] =  list[1]
+#        options[:nextport] = list[2]
+#        options[:nextkey] =  list[3]
+#        puts list
+#        puts options[:list]
+#        puts options[:prevport]
+#        puts options[:prevkey]   
+#        puts options[:nextport]  
+#        puts options[:nextkey]   
+#    end
+#    options[:joinport] = nil
+#    opts.on( '-j', '--joinport', 'specify join port' ) do |jp|
+#        options[:joinport] = jp
+#    end
+#    opts.on( '-h', '--help', 'Display this screen' ) do
+#        puts opts
+#        exit
+#    end
+#end
+#
+## parse ARGV and remove any options/parameters found
+#begin
+#    optparse.parse!
+#
+## catch exceptions
+#rescue OptionParser::MissingArgument
+#    $stderr.print $!
+#    exit
+#end
+
+i = 2
+while i < ARGV.length
+    case ARGV[i]
+    when "-n"
+        options[:nbits] = Integer( ARGV[i+1] )
+        i += 2
+    when "-o"
         options[:offline] = true
-    end
-    options[:nbits] = nil 
-    opts.on( '-n', '--numbits NB', Integer, 'specify max bits' ) do |nb|
-        options[:nbits] = nb
-    end
-    options[:prevkey] = nil 
-    options[:nextport] = nil
-    options[:nextkey] = nil
-    options[:prevport] = nil
-    opts.on( '-s', '--details PP PK NP NK', 'spec dets' ) do|pp,pk,np,nk|
-        options[:prevport] = pp
-        options[:prevkey] = pk
-        options[:nextport] = np
-        options[:nextkey] = nk
-    end
-    options[:joinport] = nil
-    opts.on( '-j', '--joinport', 'specify join port' ) do |jp|
-        options[:joinport] = jp
-    end
-    opts.on( '-h', '--help', 'Display this screen' ) do
-        puts opts
-        exit
+        i += 1
+    when "-s"
+        options[:prevport] =  Integer( ARGV[i+1])
+        options[:prevkey] = Integer( ARGV[i+2])
+        options[:nextport] =  Integer( ARGV[i+3])
+        options[:nextkey] = Integer( ARGV[i+4])
+        i += 5
+    when "-j"
+        options[:joinport] = Integer( ARGV[i+1])
+        i += 2
+    else exit
     end
 end
 
-# parse ARGV and remove any options/parameters found
-begin
-    optparse.parse!
+#puts options[:prevport] 
+#puts options[:prevkey] 
+#puts options[:nextport]
+#puts options[:nextkey] 
 
-# catch exceptions
-rescue OptionParser::MissingArgument
-    $stderr.print $!
-    exit
+################# NODE PARAMETERS ###################
+$id = Integer( ARGV[0] )
+$key = Integer( ARGV[1] )
+$nxt = (options[:nextport] ? options[:nextport] : $id)
+$prv = (options[:prevport] ? options[:prevport] : $id)
+$nxtkey = (options[:nextkey] ? options[:nextkey] : $key)
+$prvkey = (options[:prevkey] ? options[:prevkey] : $key)
+$tbl = Hash.new( "" )
+$maxsize = 2 ** (options[:nbits])
+#####################################################
+
+def doRequest( request ) # request is a string of form port CMD k [v]
+    p = Integer( request[0] )               # port
+    k = Integer( request[2] )               # key
+    v = Integer( request[3] ) if request[3] # value
+
+    case request[1]
+    when "SUCCESSOR" then puts successor( p, k )
+    when "STORE" then store( p, k, v )
+    when "LOOKUP" then lookup( p, k )
+    end
 end
 
+def isInRange( k, lo, hi, mod )
+    if lo <= hi
+        if (lo..hi) === k then return true
+        end
+    else
+        if (lo..mod) === k || (0..hi) === k then return true
+        end
+    end
+    return false
+end
 
-puts "NBITS is #{options[:nbits]}" if options[:nbits]
-
-
-# parse command line args
-# ARGV.each do|a|
-#     puts a
-# end
+def successor( p, k )
+    ans = nil
+    if isInRange( k, $key+1, $nxtkey, $maxsize)
+        ans = $nxt.to_s + " " + $nxtkey.to_s
+    elsif isInRange( k, $prvkey+1, $key, $maxsize)
+        ans = $id.to_s + " " + $key.to_s
+    else
+        puts "#{$nxt}:#{$id} SUCCESSOR #{k}"
+        ans = $stdin.gets                                          
+    end
+    return p.to_s + ":" + ans
+end 
 
 # receive I/O 
 $stdin.each_line do |l|
-    print l
+    doRequest (l.split( / / ))
 end

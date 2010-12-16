@@ -1,0 +1,14 @@
+ESTIMATE of time to complete assignment: 6 hours
+
+	Start	    Time
+Date	Time	    Spent   Work Completed
+----	-----	    -----   ---------------
+12/15	08:15	    02:00   - Read specs, read ruby docs
+12/16   12:00       06:00   - Wrote offline mode without finger
+		    -----
+		    8:00  TOTAL time spent
+
+Major Difficulties
+------------------
+- Ran into problems with Ruby version installed on zoo machines
+- The specs algorithm was very difficult to understand.

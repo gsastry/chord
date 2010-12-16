@@ -1,0 +1,27 @@
+ESTIMATE of time to complete assignment: 15 hours
+
+	Start	    Time
+Date	Time	    Spent   Work Completed
+----	-----	    -----   ---------------
+11/18	08:15	    01:00   - Read specs, read G&A
+11/20	10:15	    03:00   - Read specs, wrote pseudocode
+11/21	14:00	    01:30   - Implemented here docs, status
+11/21	16:00	    01:00   - Thought about status, fine points
+11/22	16:00	    03:00   - Implemented CD/DIRS, sig int
+11/23	15:00	    01:00   - Implemented wait
+11/24	18:00	    02:00   - Implemented subcommands, and-ors
+11/24	21:00	    02:00   - Implemented pipe, pass public tests
+11/26	18:00	    00:30   - Error checking
+		    -----
+		    15:00  TOTAL time spent
+
+Major Difficulties
+------------------
+- Understanding the structure of the program was difficult -- how child
+processes interact with parent processes, when to fork/dup, etc
+- Didn't understand how exactly to implement CD/DIRS -- saw that your code
+was executing a child process, and mimicked that, but it took a while to see
+that this child process for builtin commands is communicating errors, while
+the parent is actually executing the command.
+
+- Didn't understand when/how to reap zombies

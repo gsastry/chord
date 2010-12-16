@@ -1,0 +1,135 @@
+#!/usr/bin/env ruby
+
+require 'socket'
+require 'optparse'
+
+$options = {} # record that holds options parsed from cmd line
+$options[:offline] = false
+$options[:nbits] = 8
+$options[:prevkey] = false
+$options[:nextport] = false
+$options[:nextkey] = false
+$options[:prevport] = false
+$options[:joinport] = false
+
+i = 2
+while i < ARGV.length
+    case ARGV[i]
+    when "-n"
+        $options[:nbits] = Integer( ARGV[i+1] )
+        i += 2
+    when "-o"
+        $options[:online] = true
+        i += 1
+    when "-s"
+        $options[:prevport] =  Integer( ARGV[i+1])
+        $options[:prevkey] = Integer( ARGV[i+2])
+        $options[:nextport] =  Integer( ARGV[i+3])
+        $options[:nextkey] = Integer( ARGV[i+4])
+        i += 5
+    when "-j"
+        $options[:joinport] = Integer( ARGV[i+1])
+        i += 2
+    else exit
+    end
+end
+
+HOST = "127.0.0.1"
+
+
+################# NODE PARAMETERS ###################
+$id = Integer( ARGV[0] )
+$key = Integer( ARGV[1] )
+$nxt = ($options[:nextport] ? $options[:nextport] : $id)
+$prv = ($options[:prevport] ? $options[:prevport] : $id)
+$nxtkey = ($options[:nextkey] ? $options[:nextkey] : $key)
+$prvkey = ($options[:prevkey] ? $options[:prevkey] : $key)
+$tbl = Hash.new( "" )
+$maxsize = 2 ** ($options[:nbits])
+#####################################################
+
+def doRequest( request ) # request is a string of form port CMD k [v]
+    p = Integer( request[0] )               # port
+    k = Integer( request[2] )               # key
+    v = request[3] if request[3] # value
+    case request[1]
+    when "SUCCESSOR" then successor( p, k )
+    when "STORE" then store( p, k, v )
+    when "LOOKUP" then lookup( p, k )
+    end
+end
+
+def printMsg( p, msg )
+    if $options[:online]
+        s = TCPSocket.open( HOST, p )
+        s.print( msg.chomp )
+        s.close
+    else
+        puts "#{p}:" + msg
+    end
+end
+
+def isInRange( k, lo, hi, mod )
+    if lo <= hi
+        if (lo..hi) === k then return true
+        end
+    else
+        if (lo..mod) === k || (0..hi) === k then return true
+        end
+    end
+    return false
+end
+
+def closestPrecedingFinger( p, k )
+end
+
+def store( p, k, v )
+    if isInRange( k, $prvkey+1, $key, $maxsize)
+        if $options[:online]
+            
+        else
+            $tbl.store( k, v)
+        end
+    else # fwd request to next node
+        printMsg( $nxt, "#{$key} STORE #{k}" + v )
+        #puts "#{$nxt}:#{$key} STORE #{k}" + v
+    end
+end
+
+def lookup( p, k )
+    if isInRange( k, $prvkey+1, $key, $maxsize)
+        if $options[:online]
+        else
+            puts "#{p}:" + $tbl[k]
+        end
+    else # fwd request to next node
+        printMsg( $nxt, "#{$key} LOOKUP #{k}" + v)
+        #puts "#{$nxt}:#{$key} LOOKUP #{k}"
+    end
+end
+
+def finger( p, k )
+end
+
+def join( p, k )
+end
+
+def successor( p, k )
+    ans = nil
+    if isInRange( k, $key+1, $nxtkey, $maxsize)
+        ans = $nxt.to_s + " " + $nxtkey.to_s
+    elsif isInRange( k, $prvkey+1, $key, $maxsize)
+        ans = $id.to_s + " " + $key.to_s
+    else
+        printMsg( $nxt, "#{$id} SUCCESSOR #{k}")
+        #puts "#{$nxt}:#{$id} SUCCESSOR #{k}"
+        ans = $stdin.gets                                          
+    end
+    printMsg( p, ans)
+end 
+
+# receive I/O 
+$stdin.each_line do |l|
+    doRequest (l.split( /\s/ ))
+end
+
