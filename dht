@@ -35,10 +35,10 @@ while i < ARGV.length
 end
 
 HOST = "127.0.0.1"
-
+PORT = Integer( ARGV[0] )
 
 ################# NODE PARAMETERS ###################
-$id = Integer( ARGV[0] )
+$id = PORT
 $key = Integer( ARGV[1] )
 $nxt = ($options[:nextport] ? $options[:nextport] : $id)
 $prv = ($options[:prevport] ? $options[:prevport] : $id)
@@ -48,14 +48,32 @@ $tbl = Hash.new( "" )
 $maxsize = 2 ** ($options[:nbits])
 #####################################################
 
+def successor( a, p, k )
+    ans = nil
+    if a != $id
+        printMsg( a, "#{$id} SUCCESSOR #{k}")
+        ans = rcvMsg( )
+    elsif isInRange( k, $key+1, $nxtkey, $maxsize)
+        ans = $nxt.to_s + " " + $nxtkey.to_s
+    elsif isInRange( k, $prvkey+1, $key, $maxsize)
+        ans = $id.to_s + " " + $key.to_s
+    else
+        printMsg( $nxt, "#{$id} SUCCESSOR #{k}")
+        #puts "#{$nxt}:#{$id} SUCCESSOR #{k}"
+        ans = rcvMsg( )
+    end
+    return ans
+end 
+
 def doRequest( request ) # request is a string of form port CMD k [v]
     p = Integer( request[0] )               # port
     k = Integer( request[2] )               # key
     v = request[3] if request[3] # value
     case request[1]
-    when "SUCCESSOR" then successor( p, k )
+    when "SUCCESSOR" then printMsg( p, successor($id, p, k ) )
     when "STORE" then store( p, k, v )
     when "LOOKUP" then lookup( p, k )
+    when "LEAVE" then leave( p )
     end
 end
 
@@ -65,9 +83,49 @@ def printMsg( p, msg )
         s.print( msg.chomp )
         s.close
     else
-        puts "#{p}:" + msg
+        puts "#{p}" + ":" + msg
     end
 end
+
+def rcvMsg( )
+    if $options[:online]
+        listen_socket = TCPServer.open( PORT)
+        conn = listen_socket.accept
+        msg = conn.gets
+        conn.close
+    else
+        $stdin.gets
+    end
+end
+
+def getPrev( a, p)
+    if a != $id     # If we're not querying ourselves
+        printMsg( a, "#{$id} GETPREV")
+        ans = rcvMsg( )
+    else
+        return "#{$prv} #{$key}"
+    end
+    return ans
+end
+
+def setPrev( a, p, k)
+    if a != $id     # if not querying ourselves
+        printMsg( a, "#{$id} SETPREV #{p} #{k}")
+    else
+        $prv = p
+        $key = k
+    end
+end
+
+def setNext( a, p, k)
+    if a != $id     # if not querying ourselves ...
+        printMsg( a, "#{$id} SETNEXT #{p} #{k}")
+    else
+        $nxt = p
+        $key = k
+    end
+end
+
 
 def isInRange( k, lo, hi, mod )
     if lo <= hi
@@ -78,6 +136,15 @@ def isInRange( k, lo, hi, mod )
         end
     end
     return false
+end
+
+def leave ( p )
+    unless $prv == $id && $nxt == $id
+        printMsg( $prv, "#{$id} SETNEXT #{$nxt} #{$nxtkey}")
+        printMsg( $nxt, "#{$id} SETPREV #{$prv} #{$prvkey}")
+    else
+        exit
+    end
 end
 
 def closestPrecedingFinger( p, k )
@@ -91,7 +158,7 @@ def store( p, k, v )
             $tbl.store( k, v)
         end
     else # fwd request to next node
-        printMsg( $nxt, "#{$key} STORE #{k}" + v )
+        printMsg( $nxt, "#{$id} STORE #{k} " + v )
         #puts "#{$nxt}:#{$key} STORE #{k}" + v
     end
 end
@@ -103,30 +170,34 @@ def lookup( p, k )
             puts "#{p}:" + $tbl[k]
         end
     else # fwd request to next node
-        printMsg( $nxt, "#{$key} LOOKUP #{k}" + v)
+        printMsg( $nxt, "#{$id} LOOKUP #{k}")
+        ans = rcvMsg( )
         #puts "#{$nxt}:#{$key} LOOKUP #{k}"
+    end
+    if ans
+        puts p.to_s + ":" + ans
     end
 end
 
 def finger( p, k )
 end
 
-def join( p, k )
+def join( k, b )
+    #initialize current node
+    succ = successor( b, $id, k).split( / / )
+    prev = getPrev( succ[0], $id).split( / / )
+    $nxt = Integer( succ[0] )
+    $prv = Integer( prev[0] )
+    $nxtkey = Integer( succ[1] )
+    $prvkey = Integer( prev[1] )
+    #update neighbors
+    setNext( $prv, $id, k)
+    setPrev( $nxt, $id, k)
 end
 
-def successor( p, k )
-    ans = nil
-    if isInRange( k, $key+1, $nxtkey, $maxsize)
-        ans = $nxt.to_s + " " + $nxtkey.to_s
-    elsif isInRange( k, $prvkey+1, $key, $maxsize)
-        ans = $id.to_s + " " + $key.to_s
-    else
-        printMsg( $nxt, "#{$id} SUCCESSOR #{k}")
-        #puts "#{$nxt}:#{$id} SUCCESSOR #{k}"
-        ans = $stdin.gets                                          
-    end
-    printMsg( p, ans)
-end 
+if $options[:joinport]
+    join( $key, $options[:joinport] )
+end
 
 # receive I/O 
 $stdin.each_line do |l|
