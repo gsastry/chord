@@ -3,6 +3,11 @@
 require 'socket'
 require 'optparse'
 
+HOST = "127.0.0.1"
+PORT = Integer( ARGV[0] )
+LSTN_SOCKET = TCPServer.open( PORT)
+
+
 $options = {} # record that holds options parsed from cmd line
 $options[:offline] = false
 $options[:nbits] = 8
@@ -34,8 +39,7 @@ while i < ARGV.length
     end
 end
 
-HOST = "127.0.0.1"
-PORT = Integer( ARGV[0] )
+
 
 ################# NODE PARAMETERS ###################
 $id = PORT
@@ -46,7 +50,9 @@ $nxtkey = ($options[:nextkey] ? $options[:nextkey] : $key)
 $prvkey = ($options[:prevkey] ? $options[:prevkey] : $key)
 $tbl = Hash.new( "" )
 $maxsize = 2 ** ($options[:nbits])
+$finger = []
 #####################################################
+
 
 def successor( a, p, k )
     ans = nil
@@ -58,23 +64,27 @@ def successor( a, p, k )
     elsif isInRange( k, $prvkey+1, $key, $maxsize)
         ans = $id.to_s + " " + $key.to_s
     else
-        printMsg( $nxt, "#{$id} SUCCESSOR #{k}")
-        #puts "#{$nxt}:#{$id} SUCCESSOR #{k}"
+        if $finger.length > 0
+            printMsg( cpFinger( k )[0] ,"#{$id} SUCCESSOR #{k}")
+        else
+            printMsg( $nxt, "#{$id} SUCCESSOR #{k}")
+        end
         ans = rcvMsg( )
     end
     return ans
-    #printMsg( p, ans)
 end 
+
 
 def doRequest( request ) # request is a string of form port CMD k [v]
     p = Integer( request[0] )               # port
-    k = Integer( request[2] )               # key
+    k = Integer( request[2] ) if request[2]               # key
     v = request[3] if request[3] # value
     case request[1]
     when "SUCCESSOR" then printMsg( p, successor($id, p, k ) )
     when "STORE" then store( p, k, v )
     when "LOOKUP" then lookup( p, k )
     when "LEAVE" then leave( p )
+    when "FINGER" then finger( $nxt )
     end
 end
 
@@ -90,8 +100,7 @@ end
 
 def rcvMsg( )
     if $options[:online]
-        listen_socket = TCPServer.open( PORT)
-        conn = listen_socket.accept
+        conn = LSTN_SOCKET.accept
         msg = conn.gets
         conn.close
     else
@@ -148,7 +157,32 @@ def leave ( p )
     end
 end
 
-def closestPrecedingFinger( p, k )
+# closest preceding finger
+def cpFinger( k )
+    start = $options[:nbits]-1
+    start.downto( 0 ) do |i|
+        if isInRange( $finger[i][1], $key, k, $maxsize)
+            return $finger[i]
+        end
+    end
+    return $finger[0]
+end
+
+def finger( p )
+    #k = $key + 1
+    0.upto( $options[:nbits]-1 ) do |i|
+        k = $key + 2 ** i % $maxsize
+        if isInRange( k, $prvkey+1, $key, $maxsize )
+            $finger << [$id, $key]
+        elsif isInRange( k, $key+1, $nxtkey, $maxsize )
+            $finger << [$nxt, $nxtkey]
+        else
+            printMsg( p, "#{$id} SUCCESSOR #{k}")
+            ans = rcvMsg( ).split( / / )
+            p = Integer( ans[0] )
+            $finger << [p, Integer( ans[1] )]
+        end
+    end
 end
 
 def store( p, k, v )
@@ -159,28 +193,28 @@ def store( p, k, v )
             $tbl.store( k, v)
         end
     else # fwd request to next node
-        printMsg( $nxt, "#{$id} STORE #{k} " + v )
-        #puts "#{$nxt}:#{$key} STORE #{k}" + v
+        if $finger.length > 0
+            printMsg( cpFinger( k )[0] ,"#{$id} STORE #{k} " + v)
+        else
+            printMsg( $nxt, "#{$id} STORE #{k} " + v)
+        end
     end
 end
 
 def lookup( p, k )
     if isInRange( k, $prvkey+1, $key, $maxsize)
-        if $options[:online]
-        else
-            puts "#{p}:" + $tbl[k]
-        end
+        printMsg( p, $tbl[k])
     else # fwd request to next node
-        printMsg( $nxt, "#{$id} LOOKUP #{k}")
+        if $finger.length > 0
+            printMsg( cpFinger( k )[0] ,"#{$id} LOOKUP #{k}")
+        else
+            printMsg( $nxt, "#{$id} LOOKUP #{k}")
+        end
         ans = rcvMsg( )
-        #puts "#{$nxt}:#{$key} LOOKUP #{k}"
     end
     if ans
         puts p.to_s + ":" + ans
     end
-end
-
-def finger( p, k )
 end
 
 def join( k, b )
@@ -201,7 +235,16 @@ if $options[:joinport]
 end
 
 # receive I/O 
-$stdin.each_line do |l|
-    doRequest (l.split( /\s/ ))
+if $options[:online]
+    loop {
+        conn = lstn_socket.accept
+        req = conn.gets
+        conn.close
+        doRequest (req.split( /\s/ ))
+    }
+else
+    $stdin.each_line do |l|
+        doRequest (l.split( /\s/ ))
+    end
 end
 
