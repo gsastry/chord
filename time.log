@@ -6,10 +6,12 @@ Date	Time	    Spent   Work Completed
 12/15	08:15	    02:00   - Read specs, read ruby docs
 12/16   12:00       06:00   - Wrote offline mode without finger
 12/16   20:00       04:00   - wrote join/leave, pass 21 tests
+12/17   00:00       03:00   - Tried implementing network mode
 		    -----
-		    8:00  TOTAL time spent
+		    11:00  TOTAL time spent
 
 Major Difficulties
 ------------------
 - Ran into problems with Ruby version installed on zoo machines
 - The specs algorithm was very difficult to understand.
+- Network mode was hard to implement

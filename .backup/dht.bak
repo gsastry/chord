@@ -5,8 +5,6 @@ require 'optparse'
 
 HOST = "127.0.0.1"
 PORT = Integer( ARGV[0] )
-LSTN_SOCKET = TCPServer.open( PORT)
-
 
 $options = {} # record that holds options parsed from cmd line
 $options[:offline] = false
@@ -67,6 +65,7 @@ def successor( a, p, k )
         if $finger.length > 0
             printMsg( cpFinger( k )[0] ,"#{$id} SUCCESSOR #{k}")
         else
+            #puts "***********"
             printMsg( $nxt, "#{$id} SUCCESSOR #{k}")
         end
         ans = rcvMsg( )
@@ -77,6 +76,7 @@ end
 
 def doRequest( request ) # request is a string of form port CMD k [v]
     p = Integer( request[0] )               # port
+    #puts "to_port is #{$to_port}"
     k = Integer( request[2] ) if request[2]               # key
     v = request[3] if request[3] # value
     case request[1]
@@ -91,6 +91,7 @@ end
 def printMsg( p, msg )
     if $options[:online]
         s = TCPSocket.open( HOST, p )
+        #puts "sending msg " + msg + " to #{p}"
         s.print( msg.chomp )
         s.close
     else
@@ -100,9 +101,11 @@ end
 
 def rcvMsg( )
     if $options[:online]
-        conn = LSTN_SOCKET.accept
-        msg = conn.gets
-        conn.close
+        #listen_socket = TCPServer.open( PORT)
+        #conn = $listen_socket.accept
+        msg = $conn.gets
+        #$conn.close
+        #puts "received message " + msg 
     else
         $stdin.gets
     end
@@ -153,6 +156,7 @@ def leave ( p )
         printMsg( $prv, "#{$id} SETNEXT #{$nxt} #{$nxtkey}")
         printMsg( $nxt, "#{$id} SETPREV #{$prv} #{$prvkey}")
     else
+        $conn.close
         exit
     end
 end
@@ -187,11 +191,7 @@ end
 
 def store( p, k, v )
     if isInRange( k, $prvkey+1, $key, $maxsize)
-        if $options[:online]
-            
-        else
-            $tbl.store( k, v)
-        end
+        $tbl.store( k, v)
     else # fwd request to next node
         if $finger.length > 0
             printMsg( cpFinger( k )[0] ,"#{$id} STORE #{k} " + v)
@@ -236,12 +236,14 @@ end
 
 # receive I/O 
 if $options[:online]
-    loop {
-        conn = lstn_socket.accept
-        req = conn.gets
-        conn.close
-        doRequest (req.split( /\s/ ))
-    }
+    $listen_socket = TCPServer.open( PORT)
+    $conn = $listen_socket.accept
+    req = $conn.readline
+    #$conn.close
+    #puts "client request is " + req
+    doRequest (req.split( /\s/ ))
+    #puts "Did the request successfully"
+    $conn.close
 else
     $stdin.each_line do |l|
         doRequest (l.split( /\s/ ))
