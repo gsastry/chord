@@ -1,0 +1,8 @@
+Girish Sastry
+2010-12-19
+
+Chord
+~~~~~
+
+Chord is a distributed hash table used to store (key, value) pairs in an 
+efficient manner over a network. To use, run 'dht'
