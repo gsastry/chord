@@ -1,0 +1,252 @@
+#!/usr/bin/env ruby
+
+require 'socket'
+require 'optparse'
+
+HOST = "127.0.0.1"
+PORT = Integer( ARGV[0] )
+
+$options = {} # record that holds options parsed from cmd line
+$options[:offline] = false
+$options[:nbits] = 8
+$options[:prevkey] = false
+$options[:nextport] = false
+$options[:nextkey] = false
+$options[:prevport] = false
+$options[:joinport] = false
+
+i = 2
+while i < ARGV.length
+    case ARGV[i]
+    when "-n"
+        $options[:nbits] = Integer( ARGV[i+1] )
+        i += 2
+    when "-o"
+        $options[:online] = true
+        i += 1
+    when "-s"
+        $options[:prevport] =  Integer( ARGV[i+1])
+        $options[:prevkey] = Integer( ARGV[i+2])
+        $options[:nextport] =  Integer( ARGV[i+3])
+        $options[:nextkey] = Integer( ARGV[i+4])
+        i += 5
+    when "-j"
+        $options[:joinport] = Integer( ARGV[i+1])
+        i += 2
+    else exit
+    end
+end
+
+
+
+################# NODE PARAMETERS ###################
+$id = PORT
+$key = Integer( ARGV[1] )
+$nxt = ($options[:nextport] ? $options[:nextport] : $id)
+$prv = ($options[:prevport] ? $options[:prevport] : $id)
+$nxtkey = ($options[:nextkey] ? $options[:nextkey] : $key)
+$prvkey = ($options[:prevkey] ? $options[:prevkey] : $key)
+$tbl = Hash.new( "" )
+$maxsize = 2 ** ($options[:nbits])
+$finger = []
+#####################################################
+
+
+def successor( a, p, k )
+    ans = nil
+    if a != $id
+        printMsg( a, "#{$id} SUCCESSOR #{k}")
+        ans = rcvMsg( )
+    elsif isInRange( k, $key+1, $nxtkey, $maxsize)
+        ans = $nxt.to_s + " " + $nxtkey.to_s
+    elsif isInRange( k, $prvkey+1, $key, $maxsize)
+        ans = $id.to_s + " " + $key.to_s
+    else
+        if $finger.length > 0
+            printMsg( cpFinger( k )[0] ,"#{$id} SUCCESSOR #{k}")
+        else
+            puts "***********"
+            printMsg( $nxt, "#{$id} SUCCESSOR #{k}")
+        end
+        ans = rcvMsg( )
+    end
+    return ans
+end 
+
+
+def doRequest( request ) # request is a string of form port CMD k [v]
+    $to_port = Integer( request[0] )               # port
+    puts "to_port is #{$to_port}"
+    k = Integer( request[2] ) if request[2]               # key
+    v = request[3] if request[3] # value
+    case request[1]
+    when "SUCCESSOR" then printMsg( $to_port, successor($id, $to_port, k ) )
+    when "STORE" then store( p, k, v )
+    when "LOOKUP" then lookup( p, k )
+    when "LEAVE" then leave( p )
+    when "FINGER" then finger( $nxt )
+    end
+end
+
+def printMsg( p, msg )
+    if $options[:online]
+        s = TCPSocket.open( HOST, p )
+        puts "sending msg " + msg + " to #{p}"
+        s.print( msg.chomp )
+        s.close
+    else
+        puts "#{p}" + ":" + msg
+    end
+end
+
+def rcvMsg( )
+    if $options[:online]
+        #listen_socket = TCPServer.open( PORT)
+        #conn = $listen_socket.accept
+        msg = $conn.gets
+        #$conn.close
+        puts "received message " + msg 
+    else
+        $stdin.gets
+    end
+end
+
+def getPrev( a, p)
+    if a != $id     # If we're not querying ourselves
+        printMsg( a, "#{$id} GETPREV")
+        ans = rcvMsg( )
+    else
+        return "#{$prv} #{$key}"
+    end
+    return ans
+end
+
+def setPrev( a, p, k)
+    if a != $id     # if not querying ourselves
+        printMsg( a, "#{$id} SETPREV #{p} #{k}")
+    else
+        $prv = p
+        $key = k
+    end
+end
+
+def setNext( a, p, k)
+    if a != $id     # if not querying ourselves ...
+        printMsg( a, "#{$id} SETNEXT #{p} #{k}")
+    else
+        $nxt = p
+        $key = k
+    end
+end
+
+
+def isInRange( k, lo, hi, mod )
+    if lo <= hi
+        if (lo..hi) === k then return true
+        end
+    else
+        if (lo..mod) === k || (0..hi) === k then return true
+        end
+    end
+    return false
+end
+
+def leave ( p )
+    unless $prv == $id && $nxt == $id
+        printMsg( $prv, "#{$id} SETNEXT #{$nxt} #{$nxtkey}")
+        printMsg( $nxt, "#{$id} SETPREV #{$prv} #{$prvkey}")
+    else
+        $conn.close
+        exit
+    end
+end
+
+# closest preceding finger
+def cpFinger( k )
+    start = $options[:nbits]-1
+    start.downto( 0 ) do |i|
+        if isInRange( $finger[i][1], $key, k, $maxsize)
+            return $finger[i]
+        end
+    end
+    return $finger[0]
+end
+
+def finger( p )
+    #k = $key + 1
+    0.upto( $options[:nbits]-1 ) do |i|
+        k = $key + 2 ** i % $maxsize
+        if isInRange( k, $prvkey+1, $key, $maxsize )
+            $finger << [$id, $key]
+        elsif isInRange( k, $key+1, $nxtkey, $maxsize )
+            $finger << [$nxt, $nxtkey]
+        else
+            printMsg( p, "#{$id} SUCCESSOR #{k}")
+            ans = rcvMsg( ).split( / / )
+            p = Integer( ans[0] )
+            $finger << [p, Integer( ans[1] )]
+        end
+    end
+end
+
+def store( p, k, v )
+    if isInRange( k, $prvkey+1, $key, $maxsize)
+        $tbl.store( k, v)
+    else # fwd request to next node
+        if $finger.length > 0
+            printMsg( cpFinger( k )[0] ,"#{$id} STORE #{k} " + v)
+        else
+            printMsg( $nxt, "#{$id} STORE #{k} " + v)
+        end
+    end
+end
+
+def lookup( p, k )
+    if isInRange( k, $prvkey+1, $key, $maxsize)
+        printMsg( p, $tbl[k])
+    else # fwd request to next node
+        if $finger.length > 0
+            printMsg( cpFinger( k )[0] ,"#{$id} LOOKUP #{k}")
+        else
+            printMsg( $nxt, "#{$id} LOOKUP #{k}")
+        end
+        ans = rcvMsg( )
+    end
+    if ans
+        puts p.to_s + ":" + ans
+    end
+end
+
+def join( k, b )
+    #initialize current node
+    succ = successor( b, $id, k).split( / / )
+    prev = getPrev( succ[0], $id).split( / / )
+    $nxt = Integer( succ[0] )
+    $prv = Integer( prev[0] )
+    $nxtkey = Integer( succ[1] )
+    $prvkey = Integer( prev[1] )
+    #update neighbors
+    setNext( $prv, $id, k)
+    setPrev( $nxt, $id, k)
+end
+
+if $options[:joinport]
+    join( $key, $options[:joinport] )
+end
+
+# receive I/O 
+if $options[:online]
+    $listen_socket = TCPServer.open( PORT)
+    $conn = $listen_socket.accept
+    req = $conn.readline
+    #$conn.close
+    puts "client request is " + req
+    doRequest (req.split( /\s/ ))
+    puts "Did the request successfully"
+    $conn.close
+else
+    $stdin.each_line do |l|
+        doRequest (l.split( /\s/ ))
+    end
+end
+
